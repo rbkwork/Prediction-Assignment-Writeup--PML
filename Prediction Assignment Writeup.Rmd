@@ -1,0 +1,125 @@
+---
+title: "Prediction Assignment Writeup"
+author: "Rebeca 22/10/2020"
+output: html_document
+---
+
+# Executive summary
+With a data set from different personal activity trackers. We want to predict the manner in which the 6 subjects perform an exercise, which are catalog by performance form A to E. In this project we have a training and test set, so we can predict what the test set should be.
+
+# Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website [here] http://groupware.les.inf.puc-rio.br/har
+
+# Analysis
+
+First of all download the data
+```{r message=FALSE,cache=TRUE}
+destfile<-"D:/R projects/coursera/coursera/training"
+fileURL <-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"   
+if (!file.exists(destfile)) {
+        download.file(fileURL ,destfile)}
+
+destfile<-"D:/R projects/coursera/coursera/test"
+fileURL<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+if (!file.exists(destfile)) {
+        download.file(fileURL ,destfile)}
+library(dplyr)
+library(data.table)
+test<-tibble(fread("D:/R projects/coursera/coursera/test"))
+training<-tibble(fread("D:/R projects/coursera/coursera/training"))
+```
+
+To measure the accurenes of the model we split the training data in to sets and letting the test data wihout change. Using a single cross validation is possible in this data set, because of the large data set. 
+
+```{r message=FALSE,cache=TRUE}
+library(caret)
+set.seed(123)
+inTrain  <- createDataPartition(training$classe, p=0.7, list=FALSE)
+TrainSet <- training[inTrain, ]
+TestSet  <- training[-inTrain, ]
+
+```
+```{r}
+dim(TrainSet); dim(TestSet)
+```
+
+we can see all 6 subjects have enough observations for each classification
+```{r.,cache=TRUE}
+table(TrainSet$classe,TrainSet$user_name)
+```
+
+The data has many columns with most NA, so first of all we cut them off, because they don't help to the classification. Also the ID variables that only specify when the sample was taken or to difference between observes (columns 1:6) has been removed.
+
+```{r,cache=TRUE}
+#delete the columns with more than 1900 Na 
+nalist<-sapply(TrainSet,function(x)sum(is.na(x))) 
+notnalist<- nalist <= 1900
+sum(notnalist)
+#remove ID variables and the most NA columns
+training_notna<-TrainSet[,notnalist][,-c(1:6)]
+dim(training_notna)
+#the same for the test set
+test_notna<-TestSet[,notnalist][,-c(1:6)]
+```
+
+As we can see there is only 54 columns left and the same changes were made in the training and test set.  
+
+Other change that has to be made is to make the classe column a class factor.  
+We plot a correlation plot to see if there is to many highly corralated variables.
+```{r message=FALSE,cache=TRUE}
+training_notna[,"classe"]<- as.factor(training_notna$classe)
+test_notna[,"classe"]<- as.factor(test_notna$classe)
+corMatrix <- cor(training_notna[, -54])
+library(ggcorrplot)
+ggcorrplot(corMatrix,type = "lower")
+```
+
+However we can see that there are some correlated variables, but not many. Here we could make and PCA analysis and discard some more variables. But is not need.  
+
+The next step is to train the data. The method selected was Random Forest. (the parallel package was used to speed the training)  
+Additonaly a **10- fold corssvalidation** was used.
+
+```{r message=FALSE,cache=TRUE}
+library(caret)
+library(parallel)
+library(doParallel)
+cluster <- makeCluster(detectCores() - 1) # convention to leave 1 core for OS
+registerDoParallel(cluster)
+
+set.seed(123)
+train.control <- trainControl(method = "cv", number = 10)
+# Train the model
+model <- train(classe ~ ., 
+               data = training_notna, 
+               allowParallel = TRUE, 
+               method = "rf", 
+               trControl = train.control)
+stopCluster(cluster)
+registerDoSEQ()
+```
+
+Next we are ready to make a cross-validation from the training set.
+
+
+```{r,cache=TRUE}
+pred_rf <- predict(model, test_notna)
+confMatrf <- confusionMatrix(pred_rf, test_notna$classe)
+confMatrf
+```
+
+This means we have an accuracy of 99,83% that is really high.  
+Now is only left to predict the Data Test
+
+```{r,cache=TRUE}
+predictTEST <- predict(model, newdata=test)
+predictTEST
+```
+
+
+
+
+
+
+
+
+
